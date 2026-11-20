@@ -5,7 +5,7 @@ import anthropic
 import httpx2
 import pytest
 
-from app.triage_agent import MAX_STEPS, lookup_policy, triage_ticket
+from app.triage_agent import HANDOFF_REPLY, MAX_STEPS, lookup_policy, triage_ticket
 
 
 class FakeMessages:
@@ -174,3 +174,22 @@ def test_unknown_tool_is_sent_back_and_loop_continues():
     tool_result = client.messages.calls[1]["messages"][2]["content"][0]
     assert tool_result["is_error"] is True
     assert "Unknown tool: delete_ticket" in tool_result["content"]
+
+
+def test_max_steps_failure_is_handed_to_human():
+    looping = [reply("tool_use", [tool_use("lookup_policy", {"section": 1}, f"t{i}")])
+               for i in range(MAX_STEPS)]
+    result = triage_ticket("Loop forever", client=FakeClient(looping))
+
+    assert result.error is not None
+    assert result.escalated is True
+    assert result.reply == HANDOFF_REPLY
+
+
+def test_api_error_is_handed_to_human():
+    client = FakeClient([anthropic.APIConnectionError(request=_request())])
+    result = triage_ticket("Anything", client=client)
+
+    assert result.error == "API error: APIConnectionError"
+    assert result.escalated is True
+    assert result.reply == HANDOFF_REPLY

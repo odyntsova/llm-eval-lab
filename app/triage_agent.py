@@ -131,7 +131,12 @@ def _run_tool(name: str, tool_input: dict, result: TriageResult) -> str:
     raise ValueError(f"Unknown tool: {name}")
 
 
-def triage_ticket(ticket: str, client=None) -> TriageResult:
+HANDOFF_REPLY = (
+    "We could not process your message automatically, so we have passed it to a human agent."
+)
+
+
+def _run_agent(ticket: str, client=None) -> TriageResult:
     client = client or _client
     result = TriageResult()
     messages = [{"role": "user", "content": ticket}]
@@ -190,4 +195,14 @@ def triage_ticket(ticket: str, client=None) -> TriageResult:
         messages.append({"role": "user", "content": tool_results})
 
     result.error = f"no submit_triage after {MAX_STEPS} steps"
+    return result
+
+
+def triage_ticket(ticket: str, client=None) -> TriageResult:
+    """Run the agent. Any failure is handed to a human, so the customer is never left without an answer."""
+    result = _run_agent(ticket, client)
+    if result.error:
+        result.escalated = True
+        if not result.reply:
+            result.reply = HANDOFF_REPLY
     return result
